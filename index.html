@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rapprochement Paybox · Remise Bancaire</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+:root {
+  --bg:     #0c0e14;
+  --s0:     #13161f;
+  --s1:     #181c28;
+  --s2:     #1d2233;
+  --bdr:    #252b3e;
+  --bdr2:   #2e3650;
+  --accent: #4d8ef5;
+  --a2:     #7b5cf5;
+  --ok:     #2ec87a;
+  --fail:   #f25555;
+  --text:   #e4e8f5;
+  --t2:     #8591b2;
+  --t3:     #4d5878;
+  --r:      11px;
+  --mono:   'DM Mono', monospace;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;font-size:16px;min-height:100vh}
+
+header{position:sticky;top:0;z-index:200;background:rgba(19,22,31,.92);backdrop-filter:blur(12px);border-bottom:1px solid var(--bdr);padding:0 28px;height:62px;display:flex;align-items:center;gap:12px}
+.h-logo{width:36px;height:36px;border-radius:8px;flex-shrink:0;background:linear-gradient(135deg,var(--accent),var(--a2));display:grid;place-items:center;font-size:18px}
+.h-title{font-size:16px;font-weight:600}
+.h-sub{font-size:15px;color:var(--t3)}
+.h-sp{flex:1}
+.h-badge{font-family:var(--mono);font-size:12px;color:var(--t3);background:var(--s1);border:1px solid var(--bdr);border-radius:20px;padding:3px 10px}
+
+main{max-width:1080px;margin:0 auto;padding:28px 20px 60px}
+.sec-lbl{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--t3);margin-bottom:10px;font-weight:500}
+
+.ugrid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px}
+@media(max-width:640px){.ugrid{grid-template-columns:1fr}}
+
+.ucard{display:block;background:var(--s0);border:1.5px dashed var(--bdr2);border-radius:var(--r);padding:22px 20px 18px;cursor:pointer;transition:border-color .2s,background .2s;user-select:none;position:relative;overflow:hidden}
+.ucard:hover{border-color:var(--accent);background:var(--s1)}
+.ucard.loaded{border-style:solid;border-color:var(--ok)}
+.ucard.loaded::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(46,200,122,.05),transparent 60%);pointer-events:none}
+.ucard input[type=file]{display:none}
+.uc-icon{font-size:26px;margin-bottom:8px;display:block}
+.uc-title{font-size:15px;font-weight:600;color:var(--text);margin-bottom:3px}
+.uc-sub{font-size:13px;color:var(--t2)}
+.uc-fmts{display:flex;gap:5px;flex-wrap:wrap;margin-top:10px}
+.uc-fmt{font-family:var(--mono);font-size:10px;color:var(--t3);background:var(--s2);border:1px solid var(--bdr);border-radius:4px;padding:1px 7px}
+.uc-ok{display:none;align-items:center;gap:7px;margin-top:12px;padding:7px 11px;border-radius:7px;background:rgba(46,200,122,.1);border:1px solid rgba(46,200,122,.25);font-size:12px;color:var(--ok);font-weight:500}
+.ucard.loaded .uc-ok{display:flex}
+
+.run-row{display:flex;justify-content:center;margin-bottom:28px}
+.btn-run{display:flex;align-items:center;gap:8px;background:linear-gradient(135deg,var(--accent),var(--a2));color:#fff;border:none;border-radius:10px;padding:14px 42px;font-size:16px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;box-shadow:0 4px 20px rgba(77,142,245,.3);transition:transform .15s,box-shadow .15s,opacity .15s;letter-spacing:.2px}
+.btn-run:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 6px 26px rgba(77,142,245,.45)}
+.btn-run:disabled{opacity:.35;cursor:not-allowed}
+
+.progress{height:3px;background:var(--bdr);border-radius:2px;overflow:hidden;margin-bottom:24px;display:none}
+.progress-fill{height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--a2));border-radius:2px;transition:width .3s}
+.err-box{display:none;background:rgba(242,85,85,.08);border:1px solid rgba(242,85,85,.25);color:var(--fail);border-radius:8px;padding:11px 16px;font-size:13px;margin-bottom:18px}
+
+#results{display:none}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px}
+@media(max-width:640px){.stats{grid-template-columns:1fr 1fr}}
+.stat{background:var(--s0);border:1px solid var(--bdr);border-radius:var(--r);padding:16px 18px}
+.stat-l{font-size:12px;text-transform:uppercase;letter-spacing:.7px;color:var(--t3);margin-bottom:6px;font-weight:500}
+.stat-v{font-size:32px;font-weight:600;line-height:1;font-family:var(--mono)}
+.stat.c-total .stat-v{color:var(--text)}
+.stat.c-ok .stat-v{color:var(--ok)}
+.stat.c-fail .stat-v{color:var(--fail)}
+.stat.c-amt .stat-v{color:var(--accent);font-size:22px}
+
+.tabs{display:flex;gap:4px;margin-bottom:14px}
+.tab{display:flex;align-items:center;gap:6px;padding:9px 18px;border-radius:8px;font-size:14px;font-weight:500;cursor:pointer;border:1px solid transparent;color:var(--t2);transition:all .15s}
+.tab:hover{color:var(--text);background:var(--s1)}
+.tab.active{background:var(--s1);border-color:var(--bdr2);color:var(--text)}
+.tab-count{font-family:var(--mono);font-size:11px;padding:1px 7px;border-radius:5px;background:rgba(255,255,255,.06);color:var(--t3)}
+.tab.t-ok .tab-count{background:rgba(46,200,122,.12);color:var(--ok)}
+.tab.t-fail .tab-count{background:rgba(242,85,85,.12);color:var(--fail)}
+
+.tcard{background:var(--s0);border:1px solid var(--bdr);border-radius:var(--r);overflow:hidden}
+.tbar{display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:1px solid var(--bdr)}
+.tbar-title{font-size:15px;font-weight:600;flex:1}
+.search{background:var(--s2);border:1px solid var(--bdr);border-radius:7px;padding:7px 14px;font-size:14px;color:var(--text);font-family:'DM Sans',sans-serif;outline:none;width:230px;transition:border-color .2s}
+.search:focus{border-color:var(--accent)}
+.search::placeholder{color:var(--t3)}
+.btn-exp{display:flex;align-items:center;gap:6px;background:var(--s2);border:1px solid var(--bdr2);color:var(--t2);border-radius:7px;padding:7px 16px;font-size:13px;font-weight:500;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s}
+.btn-exp:hover{border-color:var(--accent);color:var(--text)}
+
+.tscroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse}
+thead th{background:var(--s1);padding:11px 16px;font-size:12px;font-weight:600;color:var(--t2);text-transform:uppercase;letter-spacing:.7px;border-bottom:1px solid var(--bdr);text-align:left;white-space:nowrap}
+tbody tr{border-bottom:1px solid var(--bdr);transition:background .1s}
+tbody tr:last-child{border-bottom:none}
+tbody tr:hover{background:var(--s1)}
+tbody td{padding:13px 16px;font-size:14px;color:var(--t2);vertical-align:middle}
+td.t-name{font-weight:600;color:var(--text);font-size:14px}
+td.t-ref{font-family:var(--mono);font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+td.t-email{font-family:var(--mono);font-size:12px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+td.t-date{white-space:nowrap;font-size:14px}
+td.t-amt{font-family:var(--mono);font-weight:600;color:var(--text);white-space:nowrap;font-size:15px}
+.e-ok{color:var(--ok)}
+.e-fail{color:var(--fail)}
+.pill{display:inline-flex;align-items:center;gap:5px;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;white-space:nowrap}
+.pill-ok{background:rgba(46,200,122,.12);color:var(--ok)}
+.pill-fail{background:rgba(242,85,85,.12);color:var(--fail)}
+.pill-dot{width:6px;height:6px;border-radius:50%;background:currentColor;flex-shrink:0}
+.tbadge{font-family:var(--mono);font-size:11px;color:var(--t3);background:var(--s2);border:1px solid var(--bdr);border-radius:4px;padding:3px 8px}
+
+#es{text-align:center;padding:56px 20px;color:var(--t3)}
+.es-icon{font-size:44px;margin-bottom:12px;opacity:.4}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="h-logo">💳</div>
+  <span class="h-title">Rapprochement Paybox</span>
+  <span class="h-sub">&nbsp;/&nbsp;Remise Bancaire</span>
+  <div class="h-sp"></div>
+  <span class="h-badge">v2.0</span>
+</header>
+
+<main>
+  <p class="sec-lbl">Importer les fichiers</p>
+  <div class="ugrid">
+
+    <label class="ucard" id="card-paybox" for="inp-paybox">
+      <input type="file" id="inp-paybox" accept=".csv,.xlsx,.xls" onchange="loadFile('paybox',this)">
+      <span class="uc-icon">📊</span>
+      <div class="uc-title">Extraction Paybox</div>
+      <div class="uc-sub">Export des transactions (CSV ou Excel)</div>
+      <div class="uc-fmts"><span class="uc-fmt">CSV</span><span class="uc-fmt">XLSX</span><span class="uc-fmt">XLS</span></div>
+      <div class="uc-ok"><span>✓</span><span id="nm-paybox">—</span></div>
+    </label>
+
+    <label class="ucard" id="card-remise" for="inp-remise">
+      <input type="file" id="inp-remise" accept=".csv,.xlsx,.xls,.pdf" onchange="loadFile('remise',this)">
+      <span class="uc-icon">🏦</span>
+      <div class="uc-title">Remise Bancaire</div>
+      <div class="uc-sub">Fichier de télécollecte (CSV, Excel ou PDF)</div>
+      <div class="uc-fmts"><span class="uc-fmt">CSV</span><span class="uc-fmt">XLSX</span><span class="uc-fmt">PDF</span></div>
+      <div class="uc-ok"><span>✓</span><span id="nm-remise">—</span></div>
+    </label>
+
+  </div>
+
+  <div class="run-row">
+    <button class="btn-run" id="btn-run" onclick="runMatching()" disabled>
+      <span>🔍</span> Lancer le rapprochement
+    </button>
+  </div>
+
+  <div class="err-box" id="err-box"></div>
+  <div class="progress" id="prog"><div class="progress-fill" id="prog-fill"></div></div>
+
+  <div id="results">
+    <div class="stats">
+      <div class="stat c-total"><div class="stat-l">Total lignes</div><div class="stat-v" id="s-total">—</div></div>
+      <div class="stat c-ok">  <div class="stat-l">Télécollectées</div><div class="stat-v" id="s-ok">—</div></div>
+      <div class="stat c-fail"><div class="stat-l">Refusées / Non trouvées</div><div class="stat-v" id="s-fail">—</div></div>
+      <div class="stat c-amt"> <div class="stat-l">Montant collecté</div><div class="stat-v" id="s-amt">—</div></div>
+    </div>
+
+    <div class="tabs">
+      <div class="tab t-all active" onclick="setTab('all')">Toutes <span class="tab-count" id="cnt-all">0</span></div>
+      <div class="tab t-ok"        onclick="setTab('ok')">Télécollectées <span class="tab-count" id="cnt-ok">0</span></div>
+      <div class="tab t-fail"      onclick="setTab('fail')">Refusées / Non trouvées <span class="tab-count" id="cnt-fail">0</span></div>
+    </div>
+
+    <div class="tcard">
+      <div class="tbar">
+        <div class="tbar-title">Résultats du rapprochement</div>
+        <input class="search" id="search" type="text" placeholder="🔍 Rechercher…" oninput="filterRows(this.value)">
+        <button class="btn-exp" onclick="exportCSV()">⬇ Exporter CSV</button>
+      </div>
+      <div class="tscroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Nom</th>
+              <th>Email</th>
+              <th>Date</th>
+              <th>Montant</th>
+              <th>Rapprochement</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div id="es">
+    <div class="es-icon">📂</div>
+    <p>Chargez les deux fichiers puis lancez le rapprochement</p>
+  </div>
+</main>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+let files  = { paybox: null, remise: null };
+let allRows = [];
+let currentTab = 'all';
+
+// ── FILE LOAD ──
+function loadFile(type, input) {
+  const f = input.files[0]; if (!f) return;
+  files[type] = f;
+  document.getElementById('card-' + type).classList.add('loaded');
+  document.getElementById('nm-' + type).textContent = f.name;
+  document.getElementById('btn-run').disabled = !(files.paybox && files.remise);
+}
+
+// ── DETECT SEPARATOR ──
+function detectSep(line) {
+  return (line.split(';').length > line.split(',').length) ? ';' : ',';
+}
+
+// ── DECODE MOJIBAKE Paybox (latin-1 lu comme UTF-8) ──
+function fixEncoding(s) {
+  return s
+    .replace(/T[éï][lï][éï]collect[éï]/gi, 'Télécollecté')
+    .replace(/Refus[éï]/gi, 'Refusé')
+    .replace(/Autoris[ae]tion/gi, 'Autorisation')
+    .replace(/[ï][¿½]/g, 'é');
+}
+
+// ── PARSE PAYBOX CSV ──
+function parsePayboxCSV(text) {
+  const lines = text.replace(/\r/g, '').split('\n').filter(l => l.trim());
+  if (lines.length < 2) throw new Error('CSV Paybox vide ou invalide.');
+  const sep     = detectSep(lines[0]);
+  const headers = lines[0].split(sep).map(h => h.trim());
+  const idx = name => {
+    const i = headers.indexOf(name);
+    if (i < 0) throw new Error('Colonne "' + name + '" introuvable dans le CSV Paybox.\nEn-têtes trouvés : ' + headers.join(', '));
+    return i;
+  };
+  const iRef = idx('Reference'), iEmail = idx('EmailCustomer'),
+        iDate = idx('Date'),     iAmt   = idx('Amount'),
+        iType = idx('Type'),     iStat  = idx('Status');
+
+  return lines.slice(1).filter(l => l.trim()).map(l => {
+    const p = l.split(sep);
+    return {
+      reference   : (p[iRef]   || '').trim(),
+      email       : (p[iEmail] || '').trim().toLowerCase(),
+      date        : (p[iDate]  || '').trim(),
+      amount      : parseInt(p[iAmt]  || '0', 10),
+      type        : fixEncoding((p[iType] || '').trim()),
+      statusPaybox: fixEncoding((p[iStat] || '').trim()),
+    };
+  });
+}
+
+async function parsePaybox(file) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (ext === 'csv') {
+    const buf  = await file.arrayBuffer();
+    const text = new TextDecoder('iso-8859-1').decode(buf);
+    return parsePayboxCSV(text);
+  }
+  const buf  = await file.arrayBuffer();
+  const wb   = XLSX.read(buf, { type: 'array' });
+  const ws   = wb.Sheets[wb.SheetNames[0]];
+  const json = XLSX.utils.sheet_to_json(ws, { defval: '' });
+  return json.map(r => ({
+    reference   : String(r['Reference']    || '').trim(),
+    email       : String(r['EmailCustomer']|| '').trim().toLowerCase(),
+    date        : String(r['Date']         || '').trim(),
+    amount      : parseInt(r['Amount']     || 0, 10),
+    type        : fixEncoding(String(r['Type']  || '')),
+    statusPaybox: fixEncoding(String(r['Status']|| '')),
+  }));
+}
+
+// ── PARSE REMISE BANCAIRE ──
+async function parseRemise(file) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (ext === 'pdf') return parseRemisePDF(file);
+  if (ext === 'csv') {
+    const b = await file.arrayBuffer();
+    return extractEmailsAndNamesFromText(new TextDecoder('iso-8859-1').decode(b));
+  }
+  // Excel
+  const buf = await file.arrayBuffer();
+  const wb  = XLSX.read(buf, { type: 'array' });
+  const ws  = wb.Sheets[wb.SheetNames[0]];
+  return parseRemiseExcelSheet(ws);
+}
+
+async function parseRemisePDF(file) {
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  let txt = '';
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p);
+    const c    = await page.getTextContent();
+    txt += c.items.map(i => i.str).join(' ') + '\n';
+  }
+  return extractEmailsAndNamesFromText(txt);
+}
+
+// Excel : lecture avec header:1 — robuste aux colonnes dupliquées
+function parseRemiseExcelSheet(ws) {
+  const map  = new Map();
+  const rows = XLSX.utils.sheet_to_json(ws, { defval: '', header: 1 });
+  if (rows.length < 2) return map;
+
+  // Ligne 0 = en-têtes
+  const headers = rows[0].map(h => String(h || '').toLowerCase().trim());
+  const mailIdx = headers.findIndex(h => /mail|email/.test(h));
+  const nomIdx  = headers.findIndex(h => /^nom|^name/.test(h));
+
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    let email = '';
+    if (mailIdx >= 0) {
+      email = String(row[mailIdx] || '').trim().toLowerCase();
+    } else {
+      for (const cell of row) {
+        const s = String(cell || '');
+        if (s.includes('@') && s.includes('.')) { email = s.trim().toLowerCase(); break; }
+      }
+    }
+    if (!email || !email.includes('@')) continue;
+
+    let nomRaw = nomIdx >= 0 ? String(row[nomIdx] || '').trim() : '';
+    let nomClean = '';
+    if (nomRaw) {
+      // Découper par espaces : ["Règlt", "BRAY", "FREDERIC", "Dossier", "46582"]
+      const parts = nomRaw.trim().split(/\s+/);
+      // Trouver l'index du mot "Dossier" (insensible à la casse)
+      const di = parts.findIndex(p => p.toLowerCase() === 'dossier');
+      if (di > 1) {
+        // Prendre les mots entre le 1er (Règlt) et "Dossier" exclu
+        nomClean = parts.slice(1, di).join(' ');
+      } else if (parts.length > 1) {
+        // Pas de "Dossier" trouvé : supprimer juste le premier mot
+        nomClean = parts.slice(1).join(' ');
+      } else {
+        nomClean = nomRaw;
+      }
+    }
+    console.log('[Remise] nomRaw:', JSON.stringify(nomRaw), '-> nomClean:', JSON.stringify(nomClean));
+    map.set(email, nomClean);
+  }
+  return map;
+}
+
+// Texte brut (PDF / CSV plat) : extraction par pattern "Règlt NOM Dossier XX DATE email"
+// Supporte emails tronqués avec ou sans @
+function extractEmailsAndNamesFromText(txt) {
+  const map = new Map();
+  let m;
+
+  // Pattern principal : Règlt NOM Dossier N DATE token_email
+  const lineRe = /R[eè]glt\s+([A-ZÀÂÄÉÈÊËÎÏÔÙÛÜÇ][A-ZÀÂÄÉÈÊËÎÏÔÙÛÜÇ\s\-]+?)\s+Dossier\s+\d+\s+\d{2}[.\-\/]\d{2}[.\-\/]\d{2,4}\s+([\w.\-+@]+)/gi;
+  while ((m = lineRe.exec(txt)) !== null) {
+    const nom   = m[1].trim().replace(/\s+/g, ' ');
+    const token = m[2].toLowerCase().replace(/[.,;]+$/, '');
+    if (token.length > 3) map.set(token, nom);
+  }
+
+  // Fallback : token juste après une date
+  const dateRe = /\d{2}[.\-\/]\d{2}[.\-\/]\d{2,4}\s+([\w.\-+@]+)/g;
+  while ((m = dateRe.exec(txt)) !== null) {
+    const token = m[1].toLowerCase().replace(/[.,;]+$/, '');
+    if (token.length > 3 && !map.has(token)) map.set(token, '');
+  }
+
+  // Fallback : emails complets classiques
+  const emailRe = /[\w.%+\-]+@[\w.\-]+\.[a-zA-Z]{2,}/g;
+  while ((m = emailRe.exec(txt)) !== null) {
+    const e = m[0].toLowerCase();
+    if (!map.has(e)) map.set(e, '');
+  }
+  return map;
+}
+
+// ── MATCHING ──
+// remiseMap : Map<token, nom> — le token peut être "email@dom", "email@", ou "partielocale" (sans @)
+function matchEmail(payboxEmail, remiseMap) {
+  if (!payboxEmail) return { matched: false, remise: '—', nom: '' };
+  const pe    = payboxEmail.toLowerCase();
+  const pLocal = pe.includes('@') ? pe.split('@')[0] : pe;
+
+  for (const [token, nom] of remiseMap.entries()) {
+    if (!token || token.length < 3) continue;
+
+    // Correspondance exacte
+    if (pe === token) return { matched: true, remise: token, nom };
+
+    if (token.includes('@')) {
+      // Token avec @ : pe doit commencer par le token (email tronqué après @)
+      if (pe.startsWith(token)) return { matched: true, remise: token, nom };
+      // Même partie locale
+      const tLocal = token.split('@')[0];
+      if (pLocal === tLocal && tLocal.length >= 3) return { matched: true, remise: token, nom };
+    } else {
+      // Token SANS @ : comparer avec la partie locale de l'email Paybox
+      if (pLocal === token) return { matched: true, remise: token, nom };
+      // Ou le token est un préfixe de la partie locale (troncature)
+      if (pLocal.startsWith(token) && token.length >= 5) return { matched: true, remise: token, nom };
+    }
+  }
+  return { matched: false, remise: '—', nom: '' };
+}
+
+// Télécollectée = statut Paybox "Télécollecté" OU (email dans remise ET pas refusée)
+function isOk(row) {
+  const s = row.statusPaybox.toLowerCase();
+  if (s.includes('refus') || s.includes('annul')) return false;
+  const payboxSaysTelecol = s.includes('collect') || s.includes('tlcol');
+  return payboxSaysTelecol || row.inRemise;
+}
+
+function statusLabel(row) {
+  const s = row.statusPaybox.toLowerCase();
+  if (s.includes('refus'))  return 'Refusée';
+  if (s.includes('annul'))  return 'Annulée';
+  return 'Non trouvée';
+}
+
+// ── RUN ──
+async function runMatching() {
+  const btn = document.getElementById('btn-run');
+  btn.disabled = true;
+  showErr('');
+  setProgress(10);
+  try {
+    const payboxRows   = await parsePaybox(files.paybox);  setProgress(45);
+    const remiseEmails = await parseRemise(files.remise);  setProgress(75);
+    if (!payboxRows.length)   throw new Error('Aucune ligne trouvée dans le fichier Paybox.');
+    if (!remiseEmails.size)   throw new Error('Aucun email trouvé dans la remise bancaire.');
+    allRows = payboxRows.map(row => {
+      const { matched, remise, nom } = matchEmail(row.email, remiseEmails);
+      return { ...row, inRemise: matched, remiseEmail: remise, nom };
+    });
+    setProgress(100);
+    setTimeout(render, 250);
+  } catch(e) {
+    showErr(e.message);
+    btn.disabled = false;
+    hideProgress();
+  }
+}
+
+// ── RENDER ──
+function render() {
+  hideProgress();
+  document.getElementById('es').style.display      = 'none';
+  document.getElementById('results').style.display = 'block';
+  document.getElementById('btn-run').disabled      = false;
+
+  const ok   = allRows.filter(r => isOk(r));
+  const fail = allRows.filter(r => !isOk(r));
+  const amt  = ok.reduce((s, r) => s + r.amount, 0);
+
+  document.getElementById('s-total').textContent = allRows.length;
+  document.getElementById('s-ok').textContent    = ok.length;
+  document.getElementById('s-fail').textContent  = fail.length;
+  document.getElementById('s-amt').textContent   = fmtAmt(amt);
+  document.getElementById('cnt-all').textContent  = allRows.length;
+  document.getElementById('cnt-ok').textContent   = ok.length;
+  document.getElementById('cnt-fail').textContent = fail.length;
+
+  currentTab = 'all';
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelector('.tab.t-all').classList.add('active');
+  renderTable(allRows);
+}
+
+function renderTable(rows) {
+  const tbody = document.getElementById('tbody');
+  tbody.innerHTML = '';
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:36px;color:var(--t3)">Aucun résultat</td></tr>';
+    return;
+  }
+  const frag = document.createDocumentFragment();
+  for (const r of rows) {
+    const ok   = isOk(r);
+    const pill = ok
+      ? `<span class="pill pill-ok"><span class="pill-dot"></span>Télécollectée</span>`
+      : `<span class="pill pill-fail"><span class="pill-dot"></span>${statusLabel(r)}</span>`;
+    const tr   = document.createElement('tr');
+    tr.dataset.ok = ok ? '1' : '0';
+    tr.dataset.q  = [r.nom, r.reference, r.email, r.remiseEmail, r.date].join('|').toLowerCase();
+    tr.innerHTML  = `
+      <td class="t-name">${x(r.nom)||'<span style="color:var(--t3);font-style:italic;font-weight:400">—</span>'}</td>
+      <td class="t-email ${r.inRemise?'e-ok':'e-fail'}" title="${x(r.remiseEmail)}">${x(r.remiseEmail)||'—'}</td>
+      <td class="t-date">${x(r.date)}</td>
+      <td class="t-amt">${fmtAmt(r.amount)}</td>
+      <td>${pill}</td>`;
+    frag.appendChild(tr);
+  }
+  tbody.appendChild(frag);
+}
+
+function setTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelector('.tab.t-' + tab).classList.add('active');
+  document.getElementById('search').value = '';
+  filterRows('');
+}
+
+function filterRows(q) {
+  q = q.toLowerCase();
+  document.querySelectorAll('#tbody tr').forEach(tr => {
+    const okF = currentTab === 'all' ? true : currentTab === 'ok' ? tr.dataset.ok === '1' : tr.dataset.ok === '0';
+    const qF  = !q || (tr.dataset.q || '').includes(q);
+    tr.style.display = (okF && qF) ? '' : 'none';
+  });
+}
+
+// ── EXPORT ──
+function exportCSV() {
+  if (!allRows.length) return;
+  const h = ['Nom','Email','Date','Montant (€)','Rapprochement'];
+  const b = allRows.map(r => [
+    r.nom, r.remiseEmail, r.date,
+    fmtAmtRaw(r.amount), r.type, r.statusPaybox,
+    isOk(r) ? 'Télécollectée' : statusLabel(r)
+  ]);
+  const csv  = [h, ...b].map(row => row.map(v => '"' + String(v).replace(/"/g,'""') + '"').join(';')).join('\r\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+  const a    = document.createElement('a');
+  a.href     = URL.createObjectURL(blob);
+  a.download = 'rapprochement_' + new Date().toISOString().slice(0,10) + '.csv';
+  a.click();
+}
+
+// ── HELPERS ──
+function fmtAmtRaw(v) {
+  // Paybox stocke en centimes si > quelques milliers, sinon en euros
+  const val = v > 10000 ? v / 100 : v;
+  return val.toFixed(2).replace('.', ',');
+}
+function fmtAmt(v) {
+  const val = v > 10000 ? v / 100 : v;
+  return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(val);
+}
+function x(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function showErr(msg) { const e = document.getElementById('err-box'); e.textContent = msg; e.style.display = msg ? 'block' : 'none'; }
+function setProgress(p) { document.getElementById('prog').style.display='block'; document.getElementById('prog-fill').style.width=p+'%'; }
+function hideProgress() { setTimeout(()=>{ document.getElementById('prog').style.display='none'; document.getElementById('prog-fill').style.width='0%'; }, 500); }
+</script>
+</body>
+</html>
