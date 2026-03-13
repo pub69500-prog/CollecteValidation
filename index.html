@@ -111,8 +111,10 @@ td.t-amt{font-family:var(--mono);font-weight:600;color:var(--text);white-space:n
 .pill-dot{width:6px;height:6px;border-radius:50%;background:currentColor;flex-shrink:0}
 .tbadge{font-family:var(--mono);font-size:11px;color:var(--t3);background:var(--s2);border:1px solid var(--bdr);border-radius:4px;padding:3px 8px}
 
-#es{text-align:center;padding:56px 20px;color:var(--t3)}
-.es-icon{font-size:44px;margin-bottom:12px;opacity:.4}
+td.t-prest{font-size:13px;color:var(--t2);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+#footer{text-align:center;padding:28px 0 10px;font-size:12px;color:var(--t3);letter-spacing:.5px}
+#footer strong{color:var(--accent);font-weight:600}
 </style>
 </head>
 <body>
@@ -184,6 +186,7 @@ td.t-amt{font-family:var(--mono);font-weight:600;color:var(--text);white-space:n
             <tr>
               <th>Nom</th>
               <th>Email</th>
+              <th>Prestation</th>
               <th>Date</th>
               <th>Montant</th>
               <th>Rapprochement</th>
@@ -199,6 +202,7 @@ td.t-amt{font-family:var(--mono);font-weight:600;color:var(--text);white-space:n
     <div class="es-icon">📂</div>
     <p>Chargez les deux fichiers puis lancez le rapprochement</p>
   </div>
+  <div id="footer"><strong>ChrisTool</strong> for CSE</div>
 </main>
 
 <script>
@@ -308,49 +312,65 @@ async function parseRemisePDF(file) {
   return extractEmailsAndNamesFromText(txt);
 }
 
-// Excel : lecture avec header:1 — robuste aux colonnes dupliquées
+// Excel : détecte automatiquement le format (ancien: Nom/Mail ou nouveau: od_nom/od_prenom/od_email_perso)
+// Retourne une Map<email, {nom, montant, prestation}>
 function parseRemiseExcelSheet(ws) {
   const map  = new Map();
   const rows = XLSX.utils.sheet_to_json(ws, { defval: '', header: 1 });
   if (rows.length < 2) return map;
 
-  // Ligne 0 = en-têtes
   const headers = rows[0].map(h => String(h || '').toLowerCase().trim());
-  const mailIdx = headers.findIndex(h => /mail|email/.test(h));
-  const nomIdx  = headers.findIndex(h => /^nom|^name/.test(h));
+
+  // Détecter le format
+  const isNewFormat = headers.some(h => h.includes('od_nom') || h.includes('od_email') || h.includes('finan'));
+
+  // Index des colonnes selon le format
+  const emailIdx  = headers.findIndex(h => isNewFormat ? h === 'od_email_perso' : /mail|email/.test(h));
+  const nomIdx    = headers.findIndex(h => isNewFormat ? h === 'od_nom'         : /^nom/.test(h));
+  const prenomIdx = isNewFormat ? headers.findIndex(h => h === 'od_prenom') : -1;
+  const mtIdx     = isNewFormat ? headers.findIndex(h => h === 'finan_mt')   : headers.findIndex(h => /^montant/.test(h) && !h.includes('total'));
+  const prestIdx  = isNewFormat ? headers.findIndex(h => h === 'prest_lib')  : -1;
+  const dateIdx   = headers.findIndex(h => h.includes('date'));
 
   for (let i = 1; i < rows.length; i++) {
-    const row = rows[i];
-    let email = '';
-    if (mailIdx >= 0) {
-      email = String(row[mailIdx] || '').trim().toLowerCase();
-    } else {
-      for (const cell of row) {
-        const s = String(cell || '');
-        if (s.includes('@') && s.includes('.')) { email = s.trim().toLowerCase(); break; }
-      }
-    }
+    const row   = rows[i];
+    const email = emailIdx >= 0 ? String(row[emailIdx] || '').trim().toLowerCase() : '';
     if (!email || !email.includes('@')) continue;
 
-    let nomRaw = nomIdx >= 0 ? String(row[nomIdx] || '').trim() : '';
-    let nomClean = '';
-    if (nomRaw) {
-      // Découper par espaces : ["Règlt", "BRAY", "FREDERIC", "Dossier", "46582"]
-      const parts = nomRaw.trim().split(/\s+/);
-      // Trouver l'index du mot "Dossier" (insensible à la casse)
+    // Construire le nom
+    let nom = '';
+    if (isNewFormat) {
+      const n = String(row[nomIdx]    || '').trim();
+      const p = String(row[prenomIdx] || '').trim();
+      nom = [n, p].filter(Boolean).join(' ');
+    } else {
+      let nomRaw = nomIdx >= 0 ? String(row[nomIdx] || '').trim() : '';
+      const parts = nomRaw.split(/\s+/);
       const di = parts.findIndex(p => p.toLowerCase() === 'dossier');
-      if (di > 1) {
-        // Prendre les mots entre le 1er (Règlt) et "Dossier" exclu
-        nomClean = parts.slice(1, di).join(' ');
-      } else if (parts.length > 1) {
-        // Pas de "Dossier" trouvé : supprimer juste le premier mot
-        nomClean = parts.slice(1).join(' ');
+      nom = di > 1 ? parts.slice(1, di).join(' ') : parts.slice(1).join(' ');
+    }
+
+    // Montant
+    const montantRaw = mtIdx >= 0 ? row[mtIdx] : '';
+    const montant = parseFloat(String(montantRaw).replace(',', '.')) || 0;
+
+    // Prestation
+    const prestation = prestIdx >= 0 ? String(row[prestIdx] || '').trim() : '';
+
+    // Date
+    let dateStr = '';
+    if (dateIdx >= 0 && row[dateIdx]) {
+      const d = row[dateIdx];
+      if (d instanceof Date || (typeof d === 'object' && d !== null)) {
+        // XLSX retourne les dates comme objets Date JS
+        const dt = new Date(d);
+        dateStr = dt.toLocaleDateString('fr-FR');
       } else {
-        nomClean = nomRaw;
+        dateStr = String(d).trim();
       }
     }
-    console.log('[Remise] nomRaw:', JSON.stringify(nomRaw), '-> nomClean:', JSON.stringify(nomClean));
-    map.set(email, nomClean);
+
+    map.set(email, { nom, montant, prestation, date: dateStr });
   }
   return map;
 }
@@ -386,32 +406,35 @@ function extractEmailsAndNamesFromText(txt) {
 }
 
 // ── MATCHING ──
-// remiseMap : Map<token, nom> — le token peut être "email@dom", "email@", ou "partielocale" (sans @)
+// remiseMap : Map<email, {nom, montant, prestation, date}> OU Map<token, string> (ancien format PDF/CSV)
+function getRemiseData(val) {
+  // Supporte les deux formats : objet {nom,montant,...} ou string (ancien)
+  if (val && typeof val === 'object') return val;
+  return { nom: val || '', montant: 0, prestation: '', date: '' };
+}
+
 function matchEmail(payboxEmail, remiseMap) {
-  if (!payboxEmail) return { matched: false, remise: '—', nom: '' };
-  const pe    = payboxEmail.toLowerCase();
+  if (!payboxEmail) return { matched: false, remise: '—', nom: '', montant: 0, prestation: '', remiseDate: '' };
+  const pe     = payboxEmail.toLowerCase();
   const pLocal = pe.includes('@') ? pe.split('@')[0] : pe;
 
-  for (const [token, nom] of remiseMap.entries()) {
+  for (const [token, val] of remiseMap.entries()) {
     if (!token || token.length < 3) continue;
-
-    // Correspondance exacte
-    if (pe === token) return { matched: true, remise: token, nom };
-
-    if (token.includes('@')) {
-      // Token avec @ : pe doit commencer par le token (email tronqué après @)
-      if (pe.startsWith(token)) return { matched: true, remise: token, nom };
-      // Même partie locale
-      const tLocal = token.split('@')[0];
-      if (pLocal === tLocal && tLocal.length >= 3) return { matched: true, remise: token, nom };
+    let hit = false;
+    if (pe === token) hit = true;
+    else if (token.includes('@')) {
+      if (pe.startsWith(token)) hit = true;
+      else { const tL = token.split('@')[0]; if (pLocal === tL && tL.length >= 3) hit = true; }
     } else {
-      // Token SANS @ : comparer avec la partie locale de l'email Paybox
-      if (pLocal === token) return { matched: true, remise: token, nom };
-      // Ou le token est un préfixe de la partie locale (troncature)
-      if (pLocal.startsWith(token) && token.length >= 5) return { matched: true, remise: token, nom };
+      if (pLocal === token) hit = true;
+      else if (pLocal.startsWith(token) && token.length >= 5) hit = true;
+    }
+    if (hit) {
+      const d = getRemiseData(val);
+      return { matched: true, remise: token, nom: d.nom, montant: d.montant, prestation: d.prestation, remiseDate: d.date };
     }
   }
-  return { matched: false, remise: '—', nom: '' };
+  return { matched: false, remise: '—', nom: '', montant: 0, prestation: '', remiseDate: '' };
 }
 
 // Télécollectée = statut Paybox "Télécollecté" OU (email dans remise ET pas refusée)
@@ -441,8 +464,12 @@ async function runMatching() {
     if (!payboxRows.length)   throw new Error('Aucune ligne trouvée dans le fichier Paybox.');
     if (!remiseEmails.size)   throw new Error('Aucun email trouvé dans la remise bancaire.');
     allRows = payboxRows.map(row => {
-      const { matched, remise, nom } = matchEmail(row.email, remiseEmails);
-      return { ...row, inRemise: matched, remiseEmail: remise, nom };
+      const { matched, remise, nom, montant, prestation, remiseDate } = matchEmail(row.email, remiseEmails);
+      // Priorité montant : remise Excel si dispo, sinon CSV Paybox
+      const finalAmount = montant > 0 ? montant : row.amount;
+      // Date : preferrer celle du CSV Paybox, sinon remise
+      const finalDate   = row.date || remiseDate;
+      return { ...row, inRemise: matched, remiseEmail: remise, nom, amount: finalAmount, prestation, date: finalDate };
     });
     setProgress(100);
     setTimeout(render, 250);
@@ -482,7 +509,7 @@ function renderTable(rows) {
   const tbody = document.getElementById('tbody');
   tbody.innerHTML = '';
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:36px;color:var(--t3)">Aucun résultat</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:36px;color:var(--t3)">Aucun résultat</td></tr>';
     return;
   }
   const frag = document.createDocumentFragment();
@@ -493,10 +520,11 @@ function renderTable(rows) {
       : `<span class="pill pill-fail"><span class="pill-dot"></span>${statusLabel(r)}</span>`;
     const tr   = document.createElement('tr');
     tr.dataset.ok = ok ? '1' : '0';
-    tr.dataset.q  = [r.nom, r.reference, r.email, r.remiseEmail, r.date].join('|').toLowerCase();
+    tr.dataset.q  = [r.nom, r.email, r.remiseEmail, r.prestation, r.date].join('|').toLowerCase();
     tr.innerHTML  = `
       <td class="t-name">${x(r.nom)||'<span style="color:var(--t3);font-style:italic;font-weight:400">—</span>'}</td>
       <td class="t-email ${r.inRemise?'e-ok':'e-fail'}" title="${x(r.remiseEmail)}">${x(r.remiseEmail)||'—'}</td>
+      <td class="t-prest">${x(r.prestation)||'<span style="color:var(--t3)">—</span>'}</td>
       <td class="t-date">${x(r.date)}</td>
       <td class="t-amt">${fmtAmt(r.amount)}</td>
       <td>${pill}</td>`;
@@ -525,10 +553,10 @@ function filterRows(q) {
 // ── EXPORT ──
 function exportCSV() {
   if (!allRows.length) return;
-  const h = ['Nom','Email','Date','Montant (€)','Rapprochement'];
+  const h = ['Nom','Email','Prestation','Date','Montant (€)','Rapprochement'];
   const b = allRows.map(r => [
-    r.nom, r.remiseEmail, r.date,
-    fmtAmtRaw(r.amount), r.type, r.statusPaybox,
+    r.nom, r.remiseEmail, r.prestation, r.date,
+    fmtAmtRaw(r.amount),
     isOk(r) ? 'Télécollectée' : statusLabel(r)
   ]);
   const csv  = [h, ...b].map(row => row.map(v => '"' + String(v).replace(/"/g,'""') + '"').join(';')).join('\r\n');
@@ -540,13 +568,15 @@ function exportCSV() {
 }
 
 // ── HELPERS ──
+// Paybox stocke en centimes (ex: 26110 = 261,10€). Excel stocke en euros (ex: 250.0).
+// Heuristique : si > 500 et pas de décimale probable → centimes
+function isLikelyCents(v) { return Number.isInteger(v) && v > 500; }
 function fmtAmtRaw(v) {
-  // Paybox stocke en centimes si > quelques milliers, sinon en euros
-  const val = v > 10000 ? v / 100 : v;
+  const val = isLikelyCents(v) ? v / 100 : v;
   return val.toFixed(2).replace('.', ',');
 }
 function fmtAmt(v) {
-  const val = v > 10000 ? v / 100 : v;
+  const val = isLikelyCents(v) ? v / 100 : v;
   return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(val);
 }
 function x(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
